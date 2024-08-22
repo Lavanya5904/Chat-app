@@ -1,0 +1,201 @@
+<%- include('layout/header.ejs')%>
+
+
+    
+
+<!-- <%- include('layout/footer.ejs')%> -->
+<div class="row">
+    <div class="col-md-3">
+        <ul class="list-group">
+            <% 
+                if(users.length > 0){
+                    for(let i=0; i<users.length ;i++){
+                        %>
+                        <li class="list-group-item list-group-item-dark cursor-pointer user-list " data-id="<%= users[i]['_id'] %>" >
+                        <img src="<%='http://localhost:8000/dashboard'+ users[i]['image'] %>" alt="" width="100px" height="100px">
+                            <%= users[i]['name'] %>
+                            <%
+                                if(users[i]['is_online']==1){
+                                    %>
+                                         <sup class="online-status" id="<%= users[i]['_id'] %>-status">Online</sup>
+                                    <%
+                                }
+                                else{
+                                    %>
+                                        <sup class="offline-status" id="<%= users[i]['_id'] %>-status">Offline</sup>
+                                    <%
+                                }
+                            %>
+                        </li>
+                        <%
+                    }
+                }
+             %>
+        </ul>
+    </div>
+    <div class="col-md-8">
+        <h2 class="text-lg">Hii, <%= user.name %></h2>
+        <h3 class="start-head">Click to start the Chat</h3>
+        <% if (users.length > 0) { %>
+            <% for (let i = 0; i < users.length; i++) { %>
+                <div class="chat-section" style="display: none;background-color:#9fcdff;width:100%;height:400px;overflow:scroll;width: 701px;" id="chat-container-<%= users[i]._id %>">
+                    <!-- Each user has their own chat container with a unique ID -->
+                </div>
+            <% } %>
+        <% } %>
+        <form id="chat-form">
+            <input type="text" name="message" placeholder="Enter message" id="message" class="border" required>
+            <input type="file" id="fileInput" name="file">
+            <input type="submit" value="Send Message" class="btn btn-primary">
+        </form>
+    </div>
+    </div>
+
+</div>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    var sender_id='<%= user._id %>';
+    var receiver_id;
+    var socket = io('/user-namespace',{
+        auth:{
+            token:'<%= user._id %>'
+        }
+    });
+
+
+    $(document).ready(function(){
+        $('.user-list').click(function(){
+            var userId = $(this).attr('data-id');
+            receiver_id=userId;
+            $('.start-head').hide();
+            $('.chat-section').hide(); // Hide all chat sections
+            $('#chat-container-' + receiver_id).show(); // Show chat container for the selected receiver
+
+            //old chats
+            socket.emit('existsChat',{sender_id:sender_id,receiver_id:receiver_id});
+          
+        });
+    });
+     // Update broadcast online status
+     socket.on('getOnlineUser', function(data) {
+            $('#' + data.user_id + '-status').text('Online');
+            $('#' + data.user_id + '-status').removeClass('Offline-status');
+            $('#' + data.user_id + '-status').addClass('Online-status');
+        });
+
+        // Update broadcast offline status
+        socket.on('getOfflineUser', function(data) {
+            $('#' + data.user_id + '-status').text('Offline');
+            $('#' + data.user_id + '-status').removeClass('Online-status');
+            $('#' + data.user_id + '-status').addClass('Offline-status');
+        });
+
+    ///chat save
+    // $('#chat-form').submit(function(event){
+    //     event.preventDefault();
+    //     var message = $('#message').val();
+    //     $.ajax({
+    //         url:'/save-chat',
+    //         type:'POST',
+    //         data:{sender_id:sender_id,receiver_id:receiver_id,message:message},
+    //         success:function(response){
+    //             if(response.success){
+    //                 $('#message').val('');
+    //                 console.log(response.data.message);
+    //                 let chat=response.data.message;
+    //                 let html=`
+    //                 <div class="current-user-chat">
+    //                     <h5>`+chat+`</h5>
+    //                 </div>
+    //                 `;
+    //                 $('#chat-container ').append(html);
+    //                 socket.emit('newChat',response.data)
+    //             }
+    //             else{
+    //                 alert(data.msg);
+    //             }
+    //         }
+    //     })
+    // });
+
+    // socket.on('loadNewChat',function(data){
+    //     if(sender_id==data.receiver_id && receiver_id==data.sender_id) {
+    //         let html=`
+    //                 <div class="distance-user-chat">
+    //                     <h5>`+data.message+`</h5>
+    //                 </div>
+    //                 `;
+    //     $('#chat-container').append(html);
+    //     }    
+    // });
+    document.getElementById('chat-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var message = document.getElementById('message').value;
+
+        fetch('/save-chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sender_id: sender_id, receiver_id: receiver_id, message: message })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('message').value = '';
+                    console.log(data.data.message);
+                    let chat = data.data.message;
+                    let html = `
+                        <div class="current-user-chat">
+                            <h5>${chat}</h5>
+                        </div>`;
+                        $('#chat-container-' + receiver_id).append(html); // Append message to the correct chat container
+                    socket.emit('newChat', data.data);
+                } else {
+                    alert(data.msg);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    });
+
+    socket.on('loadNewChat', function (data) {
+        if (sender_id === data.receiver_id && receiver_id === data.sender_id) {
+            let html = `
+                <div class="distance-user-chat">
+                    <h5>${data.message}</h5>
+                </div>`;
+            $('#chat-container-' + data.sender_id).append(html);
+        }
+    });
+    // Load old chats
+    socket.on('loadChats', function(data) {
+            $('#chat-container-' + receiver_id).html('');
+            var chats = data.chats;
+            let html = '';
+            chats.forEach(function(chat) {
+                if (chat.sender_id === sender_id) {
+                    html += `<div class="current-user-chat"><h5>${chat.message}</h5></div>`;
+                } else {
+                    html += `<div class="distance-user-chat"><h5>${chat.message}</h5></div>`;
+                }
+            });
+            $('#chat-container-' + receiver_id).append(html);
+        });
+
+        // New chat received
+        socket.on('loadNewChat', function(data) {
+            if (sender_id === data.receiver_id && receiver_id === data.sender_id) {
+                let html = `<div class="distance-user-chat"><h5>${data.message}</h5></div>`;
+                //$('#chat-container-' + data.sender_id).append(html);
+                // Unsubscribe from the event after receiving the message once
+                socket.off('loadNewChat');
+            }
+        });
+</script>
+<%- include('layout/footer.ejs')%>
+
+
+
+
+
